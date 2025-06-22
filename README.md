@@ -39,3 +39,10 @@ msgstr ""
 
 ---
 Vim macroları ile uğraşmak yerine Gemini'den yardım almak daha mantıklı geldi :) pot dosyasını json dosyasına çeviren bir html hazırladık.
+
+---
+Gemini tek parça json dosyasını büyük olduğu için işleyemedi. Kontrolünün kolay olması için önce ana bölümlere göre yeni json dosyaları oluşturduk. Bunlar da büyük olduğu için dosyaları belirli satır limitleri ile parçalamak için bir python betiği ekledik. (Yine Gemini sağolsun :sweat_smile:)
+
+```cmd
+python .\json_parcala.py -i .\ST_FullNames.json -o partial_jsons -m 500
+```
