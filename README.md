@@ -37,4 +37,5 @@ msgid ""
 msgstr ""
 ```
 
-
+---
+Vim macroları ile uğraşmak yerine Gemini'den yardım almak daha mantıklı geldi :) pot dosyasını json dosyasına çeviren bir html hazırladık.

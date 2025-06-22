@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>POT to JSON Converter</title>
+    <!-- Tailwind CSS CDN for quick styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f4f8; /* Light blue-gray background */
+        }
+        .container {
+            max-width: 900px;
+            margin: 2rem auto;
+            padding: 1.5rem;
+            background-color: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+        textarea {
+            min-height: 200px;
+            font-family: 'monospace';
+            font-size: 0.9rem;
+            line-height: 1.5;
+            resize: vertical;
+            padding: 0.75rem;
+            border: 1px solid #cbd5e1; /* border-slate-300 */
+            border-radius: 8px;
+            background-color: #f8fafc; /* bg-slate-50 */
+        }
+        button {
+            transition: all 0.2s ease-in-out;
+        }
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+        .message-box {
+            padding: 1rem;
+            border-radius: 8px;
+            margin-top: 1rem;
+            font-size: 0.9rem;
+            text-align: center;
+        }
+        .message-box.success {
+            background-color: #d1fae5; /* bg-emerald-100 */
+            color: #065f46; /* text-emerald-800 */
+        }
+        .message-box.error {
+            background-color: #fee2e2; /* bg-red-100 */
+            color: #991b1b; /* text-red-800 */
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="text-3xl font-bold text-center text-gray-800 mb-4">POT to JSON Converter</h1>
+
+        <p class="text-gray-600 text-center mb-6">
+            Paste your POT file content into the first box, then click "Convert".
+            The <code>msgctxt</code> will be used as the key, and <code>msgid</code> as the value.
+            <code>msgstr</code> and comments will be ignored.
+        </p>
+
+        <!-- Input Area -->
+        <div class="flex flex-col">
+            <label for="potInput" class="text-lg font-medium text-gray-700 mb-2">POT File Content:</label>
+            <textarea id="potInput" placeholder="Paste your .pot file content here..." class="focus:ring-blue-500 focus:border-blue-500"></textarea>
+        </div>
+
+        <!-- Convert Button -->
+        <button id="convertButton"
+                class="bg-blue-600 text-white font-semibold py-3 px-6 rounded-lg shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-75">
+            Convert to JSON
+        </button>
+
+        <!-- Output Area -->
+        <div class="flex flex-col">
+            <label for="jsonOutput" class="text-lg font-medium text-gray-700 mb-2">JSON Output:</label>
+            <textarea id="jsonOutput" readonly placeholder="Your JSON output will appear here..." class="bg-gray-100 text-gray-800"></textarea>
+        </div>
+
+        <!-- Copy Button -->
+        <button id="copyButton"
+                class="bg-emerald-600 text-white font-semibold py-3 px-6 rounded-lg shadow-md hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-opacity-75">
+            Copy JSON to Clipboard
+        </button>
+
+        <!-- Message Box for feedback -->
+        <div id="messageBox" class="hidden message-box"></div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const potInput = document.getElementById('potInput');
+            const convertButton = document.getElementById('convertButton');
+            const jsonOutput = document.getElementById('jsonOutput');
+            const copyButton = document.getElementById('copyButton');
+            const messageBox = document.getElementById('messageBox');
+
+            /**
+             * Displays a temporary message in the message box.
+             * @param {string} message - The message to display.
+             * @param {'success'|'error'} type - The type of message (for styling).
+             */
+            function showMessage(message, type) {
+                messageBox.textContent = message;
+                messageBox.className = `message-box ${type}`;
+                messageBox.classList.remove('hidden');
+                setTimeout(() => {
+                    messageBox.classList.add('hidden');
+                }, 3000); // Hide after 3 seconds
+            }
+
+            /**
+             * Cleans a string by removing multiline string concatenations (e.g., ""\n")
+             * and unescaping standard string escapes.
+             * @param {string} str - The raw string extracted from msgid/msgctxt.
+             * @returns {string} The cleaned string.
+             */
+            function cleanPotString(str) {
+                // Remove empty double quotes followed by a newline (for multiline strings)
+                // and then replace escaped quotes, newlines, tabs, etc.
+                return str
+                    .replace(/""\n/g, '') // Handles ""\n" for multiline strings
+                    .replace(/\\"/g, '"')  // Unescape "
+                    .replace(/\\n/g, '\n') // Unescape newline
+                    .replace(/\\t/g, '\t') // Unescape tab
+                    .replace(/\\\\/g, '\\'); // Unescape backslash
+            }
+
+            /**
+             * Converts POT file content to a JSON string.
+             * @param {string} potContent - The raw content of the POT file.
+             * @returns {string} A JSON string or an empty string if parsing fails.
+             */
+            function convertPotToJson(potContent) {
+                const lines = potContent.split('\n');
+                const result = {};
+                let currentMsgctxt = null;
+                let currentMsgid = null;
+                let isReadingMsgid = false;
+                let isReadingMsgctxt = false;
+
+                for (const line of lines) {
+                    const trimmedLine = line.trim();
+
+                    // Skip comments and empty lines
+                    if (trimmedLine.startsWith('#') || trimmedLine === '') {
+                        continue;
+                    }
+
+                    // Check for msgctxt
+                    if (trimmedLine.startsWith('msgctxt "')) {
+                        // If we were reading a previous msgid, add it to the result
+                        if (currentMsgctxt !== null && currentMsgid !== null) {
+                            result[cleanPotString(currentMsgctxt)] = cleanPotString(currentMsgid);
+                        }
+                        currentMsgctxt = trimmedLine.substring('msgctxt "'.length, trimmedLine.length - 1);
+                        currentMsgid = null; // Reset msgid for the new context
+                        isReadingMsgctxt = true;
+                        isReadingMsgid = false;
+                        continue; // Move to next line after finding msgctxt
+                    } else if (isReadingMsgctxt && trimmedLine.startsWith('"')) {
+                        // Continue reading multiline msgctxt
+                        currentMsgctxt += trimmedLine.substring(1, trimmedLine.length - 1);
+                        continue;
+                    } else {
+                        isReadingMsgctxt = false; // Stop reading msgctxt if not a continuation
+                    }
+
+
+                    // Check for msgid
+                    if (trimmedLine.startsWith('msgid "')) {
+                        // If we were reading a previous msgid without msgctxt, it's an issue or just ignore it
+                        if (currentMsgctxt === null && currentMsgid !== null) {
+                            // This scenario means an msgid appeared without a preceding msgctxt.
+                            // For this specific request, we need msgctxt as key, so we'll just discard it if no msgctxt.
+                            // In a real scenario, you might want to log a warning or handle it differently.
+                        }
+                        currentMsgid = trimmedLine.substring('msgid "'.length, trimmedLine.length - 1);
+                        isReadingMsgid = true;
+                        continue; // Move to next line after finding msgid
+                    } else if (isReadingMsgid && trimmedLine.startsWith('"')) {
+                        // Continue reading multiline msgid
+                        currentMsgid += trimmedLine.substring(1, trimmedLine.length - 1);
+                        continue;
+                    } else {
+                        isReadingMsgid = false; // Stop reading msgid if not a continuation
+                    }
+                }
+
+                // Add the last found msgctxt/msgid pair
+                if (currentMsgctxt !== null && currentMsgid !== null) {
+                    result[cleanPotString(currentMsgctxt)] = cleanPotString(currentMsgid);
+                }
+
+                return JSON.stringify(result, null, 2); // null, 2 for pretty printing
+            }
+
+            // Event listener for the Convert button
+            convertButton.addEventListener('click', () => {
+                try {
+                    const potContent = potInput.value;
+                    if (!potContent.trim()) {
+                        jsonOutput.value = '';
+                        showMessage('Please paste some POT file content first.', 'error');
+                        return;
+                    }
+                    const json = convertPotToJson(potContent);
+                    jsonOutput.value = json;
+                    showMessage('Conversion successful!', 'success');
+                } catch (error) {
+                    console.error('Conversion error:', error);
+                    jsonOutput.value = 'Error during conversion. Check console for details.';
+                    showMessage('An error occurred during conversion.', 'error');
+                }
+            });
+
+            // Event listener for the Copy button
+            copyButton.addEventListener('click', () => {
+                if (jsonOutput.value) {
+                    document.execCommand('copy'); // Fallback for clipboard access in some environments
+                    jsonOutput.select(); // Select the text in the textarea
+                    // The following line is the modern way but might not work in all iframe environments
+                    // navigator.clipboard.writeText(jsonOutput.value)
+                    //     .then(() => showMessage('JSON copied to clipboard!', 'success'))
+                    //     .catch(err => {
+                    //         console.error('Failed to copy text: ', err);
+                    //         showMessage('Failed to copy. Please copy manually.', 'error');
+                    //     });
+                    showMessage('JSON copied to clipboard!', 'success'); // Assume success with execCommand
+                } else {
+                    showMessage('No JSON to copy!', 'error');
+                }
+            });
+        });
+    </script>
+</body>
+</html>
+
